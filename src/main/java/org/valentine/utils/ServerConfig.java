@@ -1,7 +1,8 @@
 package org.valentine.utils;
 
 public class ServerConfig {
-    public static final int PORT = 5000;
+    public static final String SERVER_HOST = "localhost";
+    public static final int SERVER_PORT = 5000;
     public static final String DATA_DIRECTORY = "data";
     public static final String ERROR_UNKNOWN_COMMAND = "ERROR|Nieznana komenda";
     public static final String ERROR_INVALID_FILE_TYPE = "ERROR|Niepoprawny typ pliku";
