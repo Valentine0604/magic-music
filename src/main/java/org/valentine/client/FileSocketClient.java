@@ -1,23 +1,103 @@
 package org.valentine.client;
 
+import org.valentine.utils.VigenereCipher;
+
 import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 
-import static org.valentine.utils.ServerConfig.SERVER_HOST;
-import static org.valentine.utils.ServerConfig.SERVER_PORT;
-
 public class FileSocketClient {
+    private static final String SERVER_HOST = "localhost";
+    private static final int SERVER_PORT = 5000;
 
     public static void main(String[] args) {
         try {
-            // Uruchomienie interfejsu użytkownika
             displayMenu();
         } catch (Exception e) {
             System.err.println("Błąd w aplikacji klienckiej: " + e.getMessage());
         }
     }
 
+    // Pozostałe metody jak poprzednio, ale dodaj szyfrowanie wysyłanych wiadomości
+    private static void sendEncryptedCommand(String command) throws IOException {
+        try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
+             BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             PrintWriter output = new PrintWriter(socket.getOutputStream(), true)) {
+
+            // Zaszyfruj komendę przed wysłaniem
+            String encryptedCommand = VigenereCipher.encrypt(command);
+            output.println(encryptedCommand);
+
+            // Odszyfruj odpowiedź
+            String encryptedResponse = input.readLine();
+            String response = VigenereCipher.decrypt(encryptedResponse);
+
+            // Wyświetl lub przetwórz odpowiedź jak poprzednio
+            processServerResponse(response);
+        }
+    }
+
+    private static void processServerResponse(String response) {
+        if (response.startsWith("SUCCESS")) {
+            String content = response.substring("SUCCESS|".length());
+            System.out.println("Operacja zakończona sukcesem. Szczegóły:");
+            System.out.println(content);
+        } else if (response.startsWith("ERROR")) {
+            System.out.println("Błąd: " + response.substring("ERROR|".length()));
+        } else {
+            System.out.println("Nieznana odpowiedź serwera: " + response);
+        }
+    }
+
+    private static void listFiles() {
+        try {
+            sendEncryptedCommand("LIST");
+        } catch (IOException e) {
+            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
+        }
+    }
+
+    private static void readFile(Scanner scanner) {
+        System.out.print("Podaj nazwę pliku do odczytu: ");
+        String filename = scanner.nextLine();
+
+        try {
+            sendEncryptedCommand("READ|" + filename);
+        } catch (IOException e) {
+            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
+        }
+    }
+
+    private static void uploadFile(Scanner scanner) {
+        System.out.print("Podaj nazwę pliku do przesłania: ");
+        String filename = scanner.nextLine();
+
+        System.out.println("Wprowadź zawartość pliku (zakończ wpisaniem 'KONIEC'):");
+        StringBuilder contentBuilder = new StringBuilder();
+        String line;
+        while (!(line = scanner.nextLine()).equals("KONIEC")) {
+            contentBuilder.append(line).append("\n");
+        }
+
+        try {
+            sendEncryptedCommand("UPLOAD|" + filename + "|" + contentBuilder.toString());
+        } catch (IOException e) {
+            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
+        }
+    }
+
+    private static void deleteFile(Scanner scanner) {
+        System.out.print("Podaj nazwę pliku do usunięcia: ");
+        String filename = scanner.nextLine();
+
+        try {
+            sendEncryptedCommand("DELETE|" + filename);
+        } catch (IOException e) {
+            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
+        }
+    }
+
+    // Reszta kodu pozostaje taka sama jak w poprzedniej wersji
     private static void displayMenu() {
         Scanner scanner = new Scanner(System.in);
 
@@ -44,92 +124,6 @@ public class FileSocketClient {
                 }
                 default -> System.out.println("Nieprawidłowy wybór. Spróbuj ponownie.");
             }
-        }
-    }
-
-    private static void listFiles() {
-        try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
-             BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter output = new PrintWriter(socket.getOutputStream(), true)) {
-
-            output.println("LIST");
-            String response = input.readLine();
-
-            if (response.startsWith("SUCCESS")) {
-                String[] files = response.split("\\|");
-                System.out.println("Dostępne pliki:");
-                for (int i = 1; i < files.length; i++) {
-                    System.out.println("- " + files[i]);
-                }
-            } else {
-                System.out.println("Błąd podczas pobierania listy plików: " + response);
-            }
-        } catch (IOException e) {
-            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
-        }
-    }
-
-    private static void readFile(Scanner scanner) {
-        System.out.print("Podaj nazwę pliku do odczytu: ");
-        String filename = scanner.nextLine();
-
-        try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
-             BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter output = new PrintWriter(socket.getOutputStream(), true)) {
-
-            output.println("READ|" + filename);
-            String response = input.readLine();
-
-            if (response.startsWith("SUCCESS")) {
-                String content = response.substring("SUCCESS|".length());
-                System.out.println("Zawartość pliku " + filename + ":");
-                System.out.println(content);
-            } else {
-                System.out.println("Błąd podczas odczytu pliku: " + response);
-            }
-        } catch (IOException e) {
-            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
-        }
-    }
-
-    private static void uploadFile(Scanner scanner) {
-        System.out.print("Podaj nazwę pliku do przesłania: ");
-        String filename = scanner.nextLine();
-
-        System.out.println("Wprowadź zawartość pliku (zakończ wpisaniem 'KONIEC'):");
-        StringBuilder contentBuilder = new StringBuilder();
-        String line;
-        while (!(line = scanner.nextLine()).equals("KONIEC")) {
-            contentBuilder.append(line).append("\n");
-        }
-
-        try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
-             BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter output = new PrintWriter(socket.getOutputStream(), true)) {
-
-            output.println("UPLOAD|" + filename + "|" + contentBuilder.toString());
-            String response = input.readLine();
-
-            System.out.println(response);
-        } catch (IOException e) {
-            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
-        }
-    }
-
-    private static void deleteFile(Scanner scanner) {
-        System.out.print("Podaj nazwę pliku do usunięcia: ");
-        String filename = scanner.nextLine();
-
-        try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
-             BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter output = new PrintWriter(socket.getOutputStream(), true)) {
-
-            output.println("DELETE|" + filename);
-            String response = input.readLine();
-
-            System.out.println(response);
-        } catch (IOException e) {
-            System.err.println("Błąd komunikacji z serwerem: " + e.getMessage());
         }
     }
 }
