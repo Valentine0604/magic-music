@@ -15,23 +15,19 @@ public class FileSocketClientGUI extends JFrame {
     private DefaultTableModel tableModel;
 
     public FileSocketClientGUI() {
-        // Konfiguracja głównego okna
+        // Główna konfiguracja okna
         setTitle("Klient Plików");
-        setSize(700, 500);
+        setSize(800, 600); // Rozmiar okna
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
 
-        // Panel górny - operacje
-        JPanel topPanel = createTopPanel();
-        add(topPanel, BorderLayout.NORTH);
-
-        // Panel środkowy - lista plików
-        JPanel centerPanel = createCenterPanel();
-        add(centerPanel, BorderLayout.CENTER);
-
-        // Panel dolny - obszar treści
-        JPanel bottomPanel = createBottomPanel();
-        add(bottomPanel, BorderLayout.SOUTH);
+        // Utworzenie i dodanie paneli do GUI
+        JPanel topPanel = createTopPanel();           // Panel z przyciskami
+        add(topPanel, BorderLayout.NORTH);            // Położenie: góra
+        JPanel centerPanel = createCenterPanel();     // Panel z tabelą
+        add(centerPanel, BorderLayout.CENTER);        // Położenie: centrum
+        JPanel bottomPanel = createBottomPanel();     // Panel z obszarem do edycji treści
+        add(bottomPanel, BorderLayout.SOUTH);         // Położenie: dół
     }
 
     private JPanel createTopPanel() {
@@ -42,6 +38,7 @@ public class FileSocketClientGUI extends JFrame {
         JButton readButton = new JButton("Odczytaj plik");
         JButton uploadButton = new JButton("Wyślij plik");
         JButton deleteButton = new JButton("Usuń plik");
+        JButton deleteSelectedButton = new JButton("Usuń wybrany plik"); // NOWY GUZIK do usuwania pliku z tabeli
 
         // Pole nazwy pliku
         fileNameField = new JTextField(20);
@@ -53,12 +50,14 @@ public class FileSocketClientGUI extends JFrame {
         readButton.addActionListener(e -> readFile());
         uploadButton.addActionListener(e -> uploadFile());
         deleteButton.addActionListener(e -> deleteFile());
+        deleteSelectedButton.addActionListener(e -> deleteSelectedFile()); // Akcja usuwania wybranego pliku
 
         // Dodanie przycisków do panelu
         panel.add(listButton);
         panel.add(readButton);
         panel.add(uploadButton);
         panel.add(deleteButton);
+        panel.add(deleteSelectedButton);
 
         return panel;
     }
@@ -66,14 +65,23 @@ public class FileSocketClientGUI extends JFrame {
     private JPanel createCenterPanel() {
         JPanel panel = new JPanel(new BorderLayout());
 
-        // Nagłówki kolumn
+        // Nagłówki kolumn tabeli
         String[] columnNames = {"Nazwa pliku"};
-        tableModel = new DefaultTableModel(columnNames, 0);
-        filesTable = new JTable(tableModel);
+        tableModel = new DefaultTableModel(columnNames, 0); // Model tabeli
+        filesTable = new JTable(tableModel); // Tworzenie tabeli
 
-        // Przewijanie dla tabeli
+        // Dodanie scrollowania do tabeli
         JScrollPane scrollPane = new JScrollPane(filesTable);
         panel.add(scrollPane, BorderLayout.CENTER);
+
+        // Słuchacz wybierania wierszy w tabeli
+        filesTable.getSelectionModel().addListSelectionListener(e -> {
+            int selectedRow = filesTable.getSelectedRow();
+            if (selectedRow >= 0) {
+                String selectedFile = (String) tableModel.getValueAt(selectedRow, 0); // Pobierz nazwę pliku
+                fileNameField.setText(selectedFile); // Wyświetl ją w polu tekstowym
+            }
+        });
 
         return panel;
     }
@@ -81,13 +89,14 @@ public class FileSocketClientGUI extends JFrame {
     private JPanel createBottomPanel() {
         JPanel panel = new JPanel(new BorderLayout());
 
-        // Obszar treści pliku
+        // Obszar tekstowy do wyświetlania/edycji treści pliku
         contentArea = new JTextArea(10, 50);
         contentArea.setLineWrap(true);
         contentArea.setWrapStyleWord(true);
         JScrollPane scrollPane = new JScrollPane(contentArea);
 
         panel.add(scrollPane, BorderLayout.CENTER);
+
         return panel;
     }
 
@@ -95,11 +104,17 @@ public class FileSocketClientGUI extends JFrame {
         try {
             String response = sendEncryptedCommand("LIST");
 
-            // Czyszczenie poprzedniej zawartości tabeli
+            // Wyczyść tabelę z dotychczasowych wartości
             tableModel.setRowCount(0);
 
-            // Dodanie plików do tabeli
+            // Rozdziel pliki i dodaj je do tabeli
             String[] files = response.substring("SUCCESS|".length()).split("\\|");
+
+            if (files.length == 0 || (files.length == 1 && files[0].isEmpty())) {
+                showError("Brak plików na serwerze.");
+                return;
+            }
+
             for (String file : files) {
                 tableModel.addRow(new Object[]{file});
             }
@@ -110,8 +125,9 @@ public class FileSocketClientGUI extends JFrame {
 
     private void readFile() {
         String filename = fileNameField.getText();
+
         if (filename.isEmpty()) {
-            showError("Podaj nazwę pliku!");
+            showError("Podaj nazwę pliku lub wybierz go z listy!");
             return;
         }
 
@@ -142,7 +158,7 @@ public class FileSocketClientGUI extends JFrame {
             String response = sendEncryptedCommand("UPLOAD|" + filename + "|" + content);
             JOptionPane.showMessageDialog(this, response, "Operacja", JOptionPane.INFORMATION_MESSAGE);
 
-            // Odśwież listę plików po uploadzeniu
+            // Odśwież listę plików po uploadzie
             listFiles();
         } catch (Exception e) {
             showError("Błąd wysyłania pliku: " + e.getMessage());
@@ -151,6 +167,7 @@ public class FileSocketClientGUI extends JFrame {
 
     private void deleteFile() {
         String filename = fileNameField.getText();
+
         if (filename.isEmpty()) {
             showError("Podaj nazwę pliku!");
             return;
@@ -166,10 +183,45 @@ public class FileSocketClientGUI extends JFrame {
         if (confirm == JOptionPane.YES_OPTION) {
             try {
                 String response = sendEncryptedCommand("DELETE|" + filename);
-                JOptionPane.showMessageDialog(this, response, "Operacja", JOptionPane.INFORMATION_MESSAGE);
+                if (response.startsWith("SUCCESS")) {
+                    JOptionPane.showMessageDialog(this, "Plik został usunięty: " + filename, "Operacja zakończona", JOptionPane.INFORMATION_MESSAGE);
+                    listFiles();
+                } else {
+                    showError("Nie udało się usunąć pliku: " + response);
+                }
+            } catch (Exception e) {
+                showError("Błąd usuwania pliku: " + e.getMessage());
+            }
+        }
+    }
 
-                // Odśwież listę plików po usunięciu
-                listFiles();
+    private void deleteSelectedFile() {
+        int selectedRow = filesTable.getSelectedRow();
+
+        if (selectedRow < 0) {
+            showError("Wybierz plik do usunięcia z listy!");
+            return;
+        }
+
+        String filename = (String) tableModel.getValueAt(selectedRow, 0);
+
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "Czy na pewno chcesz usunąć plik: " + filename + "?",
+                "Potwierdzenie usunięcia",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            try {
+                String response = sendEncryptedCommand("DELETE|" + filename);
+
+                if (response.startsWith("SUCCESS")) {
+                    JOptionPane.showMessageDialog(this, "Plik został usunięty: " + filename, "Operacja zakończona", JOptionPane.INFORMATION_MESSAGE);
+                    tableModel.removeRow(selectedRow); // Usuń wiersz z tabeli po sukcesie
+                } else {
+                    showError("Nie udało się usunąć pliku: " + response);
+                }
             } catch (Exception e) {
                 showError("Błąd usuwania pliku: " + e.getMessage());
             }
@@ -181,11 +233,9 @@ public class FileSocketClientGUI extends JFrame {
              BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter output = new PrintWriter(socket.getOutputStream(), true)) {
 
-            // Zaszyfruj komendę
             String encryptedCommand = VigenereCipher.encrypt(command);
             output.println(encryptedCommand);
 
-            // Odczytaj zaszyfrowaną odpowiedź
             String encryptedResponse = input.readLine();
             return VigenereCipher.decrypt(encryptedResponse);
         }
@@ -201,7 +251,6 @@ public class FileSocketClientGUI extends JFrame {
     }
 
     public static void main(String[] args) {
-        // Uruchomienie GUI w wątku EDT
         SwingUtilities.invokeLater(() -> {
             FileSocketClientGUI gui = new FileSocketClientGUI();
             gui.setVisible(true);
